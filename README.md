@@ -8,8 +8,8 @@ Plain HTML, CSS and JavaScript. No framework, no build step. The repo root is th
 index.html          page and styles
 site.js             name, phone, towns, hours, prices, video paths (edit this one)
 app.js              scroll story, price cards, booking form, reduced motion
-video/              six H.264 MP4s that the scroll story scrubs (muted, 16:9, 720p)
-img/                six posters, the area photo (lot.jpg), favicon
+video/              five H.264 MP4s that the scroll film scrubs (muted, 16:9, 720p)
+img/                five posters, the driveway and area photos, favicon
 fonts/              Barlow and Barlow Condensed (SIL Open Font License)
 ```
 
@@ -52,17 +52,18 @@ Or drag the project folder onto https://app.netlify.com/drop for a one-off deplo
 
 ## Videos
 
-The six clips live in `video/` and are committed with the site. They were generated with Higgsfield
-(Seedance 2.5, 720p, no audio) and encoded as H.264 MP4 with `+faststart` so iPhone Safari can start them fast.
-Posters in `img/` are the first frame of each clip.
+The five clips live in `video/` and are committed with the site: 01-drop, 02-fill, 03-load, 04-pickup,
+05-leave, all at the same driveway. They were generated with Higgsfield (720p, no audio) and encoded as
+H.264 MP4 with `+faststart`. Posters in `img/` are the first frame of each clip.
 
-Scrolling scrubs each clip from its first frame to its last, so every clip needs a keyframe every 0.25 s
-or seeking stutters. To replace a clip, keep the same file name and encode it like this:
+Scrolling scrubs each clip from its first frame to its last. The page loads each clip into memory first,
+so seeking works on any host. Every clip needs a keyframe every 0.25 s or seeking stutters. To replace one,
+keep the file name and encode it like this:
 
 ```
 ffmpeg -i new-clip.mp4 -vf "scale=1280:720,fps=24" -c:v libx264 -profile:v high -pix_fmt yuv420p \
-  -crf 23 -g 6 -keyint_min 6 -sc_threshold 0 -an -movflags +faststart video/03-fill.mp4
-ffmpeg -i video/03-fill.mp4 -frames:v 1 -q:v 4 img/03-fill.jpg
+  -crf 23 -g 6 -keyint_min 6 -sc_threshold 0 -an -movflags +faststart video/02-fill.mp4
+ffmpeg -i video/02-fill.mp4 -frames:v 1 -q:v 4 img/02-fill.jpg
 ```
 
-With reduced motion on, the story does not scrub. Each beat holds a still frame and the text stays put.
+With reduced motion on, the film does not scrub: it jumps to the landed can and the text stays put.

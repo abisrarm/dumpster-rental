@@ -1,4 +1,4 @@
-/* app.js — scroll-scrubbed story, price menu, booking form, reduced motion.
+/* app.js — scroll-scrubbed film, price menu, booking form, reduced motion.
    Business details come from site.js (window.SITE). */
 (function () {
   "use strict";
@@ -50,12 +50,21 @@
     el.innerHTML =
       '<div class="top"><div class="size"></div>' + (item.featured ? '<span class="tag">Most booked</span>' : "") + '</div>' +
       '<div class="price"><sup>$</sup><span></span></div>' +
-      (item.detail ? '<div class="detail"></div>' : "") +
-      '<p class="fits"></p><div class="pick"><a class="btn sm" href="#book" data-book></a></div>';
+      '<p class="fits"></p><ul class="facts"></ul>' +
+      '<div class="pick"><a class="btn sm" href="#book" data-book></a></div>';
     $(".size", el).textContent = item.size;
     $(".price span", el).textContent = item.price.toLocaleString("en-US");
-    if (item.detail) $(".detail", el).textContent = item.detail;
     $(".fits", el).textContent = item.fits;
+    var facts = [];
+    if (item.tons) {
+      facts.push(item.tons + " tons included");
+      facts.push(money(SITE.overagePerTon) + " a ton over, called before pickup");
+    } else if (item.weight) {
+      facts.push(item.weight);
+    }
+    var ul = $(".facts", el);
+    if (!facts.length) ul.remove();
+    facts.forEach(function (f) { var li = document.createElement("li"); li.textContent = f; ul.appendChild(li); });
     var btn = $(".btn", el);
     btn.textContent = service === "Junk removal" ? "Book the crew" : "Book this can";
     if (!item.featured) btn.classList.add("dark");
@@ -64,10 +73,64 @@
     btn.setAttribute("aria-label", btn.textContent + ": " + item.size + ", " + money(item.price));
     return el;
   }
+
+  /* Press (or hover with a mouse) lifts a card, scales it to 1.06 and tilts it
+     toward the finger. Release eases it back flat. Touch uses touchstart/touchend
+     and never blocks the page from scrolling. */
+  var TILT = 10;
+  function tiltTo(el, x, y) {
+    var r = el.getBoundingClientRect();
+    var nx = Math.min(1, Math.max(0, (x - r.left) / r.width)) - 0.5;
+    var ny = Math.min(1, Math.max(0, (y - r.top) / r.height)) - 0.5;
+    el.style.setProperty("--ry", (nx * TILT).toFixed(2) + "deg");
+    el.style.setProperty("--rx", (-ny * TILT).toFixed(2) + "deg");
+    el.style.setProperty("--gx", ((nx + 0.5) * 100).toFixed(1) + "%");
+    el.style.setProperty("--gy", ((ny + 0.5) * 100).toFixed(1) + "%");
+  }
+  function press(el, x, y) {
+    if (reduceMotion.matches) return;
+    el.classList.add("press");
+    tiltTo(el, x, y);
+  }
+  function release(el) {
+    el.classList.remove("press");
+    el.style.setProperty("--rx", "0deg");
+    el.style.setProperty("--ry", "0deg");
+  }
+  function bindPress(grid) {
+    grid.addEventListener("touchstart", function (e) {
+      var el = e.target.closest(".card");
+      if (el) press(el, e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    grid.addEventListener("touchmove", function (e) {
+      var el = e.target.closest(".card");
+      if (el && el.classList.contains("press")) tiltTo(el, e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    ["touchend", "touchcancel"].forEach(function (type) {
+      grid.addEventListener(type, function (e) {
+        var el = e.target.closest(".card");
+        if (el) release(el);
+      }, { passive: true });
+    });
+    // Mouse and pen: hover lifts and tilts, press and release behave the same way.
+    grid.addEventListener("pointermove", function (e) {
+      if (e.pointerType === "touch") return;
+      var el = e.target.closest(".card");
+      $$(".card.press", grid).forEach(function (c) { if (c !== el) release(c); });
+      if (el) press(el, e.clientX, e.clientY);
+    });
+    grid.addEventListener("pointerleave", function (e) {
+      if (e.pointerType === "touch") return;
+      $$(".card.press", grid).forEach(release);
+    });
+  }
+
   var rentalGrid = $("#rental-grid");
   var junkGrid = $("#junk-grid");
   SITE.rentals.forEach(function (r, i) { rentalGrid.appendChild(card(r, i, "Dumpster rental")); });
   SITE.junk.forEach(function (j, i) { junkGrid.appendChild(card(j, i, "Junk removal")); });
+  bindPress(rentalGrid);
+  bindPress(junkGrid);
 
   if ("IntersectionObserver" in window) {
     var revealIO = new IntersectionObserver(function (entries) {
@@ -81,9 +144,10 @@
   }
 
   /* ---------- Scroll story ----------
-     The story is pinned for 600vh. Scroll position IS the playhead: each beat
-     owns a slice of the scroll and scrubs its clip from first frame to last.
-     Nothing autoplays behind the type, and one headline shows at a time. */
+     The story is pinned for 700vh. Scroll position IS the playhead: each clip
+     owns a slice of the scroll (SITE.videos[].to) and is scrubbed from its first
+     frame to its last. Headlines own their own slices (data-from / data-to), so
+     one clip can carry two lines. Nothing autoplays, one headline at a time. */
   var story = $("#story");
   var reels = $("#reels");
   var lines = $$(".line");
@@ -91,9 +155,10 @@
   var tapBtn = $("#tap");
   var countNow = $("#count-now");
   var cue = $("#cue");
-  // Where each beat ends, as a share of the pinned scroll.
-  var ENDS = [0.30, 0.45, 0.60, 0.75, 0.88, 1];
-  var current = -1;
+  var clipEnds = SITE.videos.map(function (v) { return v.to; });
+  var lineFrom = lines.map(function (l) { return parseFloat(l.getAttribute("data-from")); });
+  var lineTo = lines.map(function (l) { return parseFloat(l.getAttribute("data-to")); });
+  var clip = -1, line = -1;
 
   var videos = SITE.videos.map(function (v, i) {
     var el = document.createElement("video");
@@ -104,44 +169,37 @@
     el.setAttribute("playsinline", "");
     el.setAttribute("webkit-playsinline", "");
     el.setAttribute("disablepictureinpicture", "");
-    el.setAttribute("preload", i < 2 ? "auto" : "metadata");
+    el.setAttribute("preload", "auto");
     el.poster = v.poster;
-    el.src = v.src;
     reels.appendChild(el);
     return el;
   });
 
-  // Scrubbing needs seekable video. Hosts that ignore byte-range requests (and
-  // iOS on a slow link) leave a streamed clip stuck on its first frame, so pull
-  // each clip into memory, in story order, and play it from a blob URL instead.
+  // Load each clip fully into memory and play it from a blob URL. Seeking a blob
+  // is instant and works on hosts that don't answer range requests, which scrubbing
+  // needs. If fetch is unavailable (opened from file://), fall back to the plain URL.
   function loadClip(i) {
-    if (i >= videos.length || !window.fetch || !window.URL || location.protocol === "file:") return;
-    fetch(SITE.videos[i].src)
-      .then(function (res) { if (!res.ok) throw new Error("HTTP " + res.status); return res.blob(); })
-      .then(function (blob) {
-        var v = videos[i];
-        v.src = URL.createObjectURL(blob);
-        v.load();
-        if (primed) {
-          var p = v.play();
-          if (p && p.then) p.then(function () { v.pause(); draw(true); }, function () {});
-        }
-      })
-      .catch(function () { /* keep the streamed src */ })
-      .then(function () { loadClip(i + 1); });
+    var v = videos[i], src = SITE.videos[i].src;
+    if (!window.fetch || location.protocol === "file:") { v.src = src; return Promise.resolve(); }
+    return fetch(src).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.blob();
+    }).then(function (b) {
+      v.src = URL.createObjectURL(b);
+    }).catch(function () { v.src = src; });
   }
-  loadClip(0);
+  // Current clip first, then the rest in story order.
+  var loading = loadClip(0);
+  videos.forEach(function (v, i) { if (i) loading = loading.then(function () { return loadClip(i); }); });
 
   // iOS paints a seeked frame only after the element has been allowed to play
   // once. Prime each clip with a muted play/pause; if that is refused, ask for a tap.
-  var primed = false;
+  function primeOne(v) {
+    var p = v.play();
+    return p && p.then ? p.then(function () { v.pause(); }) : Promise.resolve(v.pause());
+  }
   function prime() {
-    var pending = videos.map(function (v) {
-      var p = v.play();
-      return p && p.then ? p.then(function () { v.pause(); }) : Promise.resolve(v.pause());
-    });
-    return Promise.all(pending).then(function () {
-      primed = true;
+    Promise.all(videos.filter(function (v) { return v.src; }).map(primeOne)).then(function () {
       tapBtn.classList.remove("show");
       draw(true);
     }, function (err) {
@@ -149,28 +207,41 @@
     });
   }
   tapBtn.addEventListener("click", prime);
+  videos.forEach(function (v) {
+    v.addEventListener("loadeddata", function () {
+      if (!reduceMotion.matches) primeOne(v).catch(function (err) {
+        if (err && err.name === "NotAllowedError") tapBtn.classList.add("show");
+      });
+      draw(true);
+    });
+  });
 
   function progress() {
     var travel = story.offsetHeight - window.innerHeight;
     return travel > 0 ? Math.min(1, Math.max(0, -story.getBoundingClientRect().top / travel)) : 0;
   }
-  function beatAt(p) {
-    for (var i = 0; i < ENDS.length; i++) if (p < ENDS[i]) return i;
-    return ENDS.length - 1;
+  function clipAt(p) {
+    for (var i = 0; i < clipEnds.length; i++) if (p < clipEnds[i]) return i;
+    return clipEnds.length - 1;
+  }
+  function lineAt(p) {
+    for (var i = 0; i < lines.length; i++) if (p < lineTo[i]) return i;
+    return lines.length - 1;
   }
 
-  function setBeat(n) {
-    if (n === current) return;
-    if (current >= 0) {
-      lines[current].classList.remove("on");
-      videos[current].classList.remove("on");
-    }
-    current = n;
-    lines[n].classList.add("on");
+  function setClip(n) {
+    if (n === clip) return;
+    if (clip >= 0) videos[clip].classList.remove("on");
+    clip = n;
     videos[n].classList.add("on");
+  }
+  var introDone = false;
+  function setLine(n) {
+    if (n === line) return;
+    if (line >= 0) lines[line].classList.remove("on");
+    line = n;
+    if (introDone) lines[n].classList.add("on");
     countNow.textContent = ("0" + (n + 1)).slice(-2);
-    var next = videos[n + 1];
-    if (next && next.getAttribute("preload") !== "auto") next.setAttribute("preload", "auto");
   }
 
   // Smoothed playhead so a flick of the finger glides instead of jumping.
@@ -179,21 +250,24 @@
   var raf = 0;
   function draw(force) {
     var p = shown;
-    var n = beatAt(p);
-    setBeat(n);
-    var start = n ? ENDS[n - 1] : 0;
-    var local = Math.min(1, Math.max(0, (p - start) / (ENDS[n] - start)));
-    // The intro lands the can a little before its slice ends, then holds that frame.
-    if (n === 0) local = Math.min(1, local / 0.9);
+    var n = clipAt(p);
+    setClip(n);
+    setLine(lineAt(p));
+    var start = n ? clipEnds[n - 1] : 0;
+    var local = Math.min(1, Math.max(0, (p - start) / (clipEnds[n] - start)));
     var v = videos[n];
-    if (reduceMotion.matches) local = n === 0 ? 1 : 0.5;
+    if (reduceMotion.matches) {
+      // No scrub: hold the landed can from the end of the drop clip.
+      setClip(0);
+      v = videos[0];
+      local = 1;
+    }
     if (v.duration) {
       var t = Math.min(v.duration - 0.05, local * v.duration);
       if ((force || Math.abs(v.currentTime - t) > 0.02) && !v.seeking) v.currentTime = t;
     }
     for (var i = 0; i < ticks.length; i++) {
-      var s0 = i ? ENDS[i - 1] : 0;
-      ticks[i].style.setProperty("--p", Math.min(1, Math.max(0, (p - s0) / (ENDS[i] - s0))).toFixed(3));
+      ticks[i].style.setProperty("--p", Math.min(1, Math.max(0, (p - lineFrom[i]) / (lineTo[i] - lineFrom[i]))).toFixed(3));
     }
     cue.classList.toggle("gone", p > 0.02);
   }
@@ -209,27 +283,19 @@
   }
   window.addEventListener("scroll", onScroll, { passive: true });
   window.addEventListener("resize", onScroll);
-  // When a seek lands, check it is still the frame the finger wants.
   videos.forEach(function (v) {
     v.addEventListener("seeked", function () { if (!raf) draw(false); });
-    v.addEventListener("loadedmetadata", function () { draw(true); });
   });
 
   target = shown = progress();
-  setBeat(beatAt(shown));
-  lines[current].classList.remove("on"); // the intro raises it
-  if (!reduceMotion.matches) prime();
   draw(true);
 
   // Intro: lift the veil, drop the nav, raise the first headline once the type is ready.
-  var introDone = false;
   function intro() {
     if (introDone) return;
     introDone = true;
-    requestAnimationFrame(function () {
-      document.documentElement.classList.remove("pre");
-      lines[current].classList.add("on");
-    });
+    document.documentElement.classList.remove("pre");
+    setTimeout(function () { if (line >= 0) lines[line].classList.add("on"); }, 60);
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(intro, intro);
   setTimeout(intro, 1200); // never hold the page hostage to a font
@@ -257,16 +323,15 @@
       o.textContent = t;
       townSel.appendChild(o);
     });
-    $("#faq-towns").textContent = "Austin metro and every city in Hays County: " + SITE.towns.join(", ") + ". Outside that? Call and ask.";
+    $("#faq-towns").textContent = "We cover " + SITE.towns.join(", ") + ". Outside that? Call dispatch and ask.";
 
     function message() {
       var d = new FormData(qform);
       var parts = ["Hi " + SITE.name + ", I'd like a quote."];
-      if (d.get("service") && d.get("service") !== "Not sure yet") parts.push("Service: " + d.get("service"));
       if (d.get("name")) parts.push("Name: " + d.get("name"));
       if (d.get("phone")) parts.push("Phone: " + d.get("phone"));
       if (d.get("town")) parts.push("Town: " + d.get("town"));
-      if (d.get("details")) parts.push(d.get("details"));
+      if (d.get("details")) parts.push("What it is: " + d.get("details"));
       if (files.length) parts.push(files.length > 1 ? "(" + files.length + " photos or videos attached)" : "(1 photo or video attached)");
       return parts.join("\n");
     }
