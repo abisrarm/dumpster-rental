@@ -111,6 +111,27 @@
     return el;
   });
 
+  // Scrubbing needs seekable video. Hosts that ignore byte-range requests (and
+  // iOS on a slow link) leave a streamed clip stuck on its first frame, so pull
+  // each clip into memory, in story order, and play it from a blob URL instead.
+  function loadClip(i) {
+    if (i >= videos.length || !window.fetch || !window.URL || location.protocol === "file:") return;
+    fetch(SITE.videos[i].src)
+      .then(function (res) { if (!res.ok) throw new Error("HTTP " + res.status); return res.blob(); })
+      .then(function (blob) {
+        var v = videos[i];
+        v.src = URL.createObjectURL(blob);
+        v.load();
+        if (primed) {
+          var p = v.play();
+          if (p && p.then) p.then(function () { v.pause(); draw(true); }, function () {});
+        }
+      })
+      .catch(function () { /* keep the streamed src */ })
+      .then(function () { loadClip(i + 1); });
+  }
+  loadClip(0);
+
   // iOS paints a seeked frame only after the element has been allowed to play
   // once. Prime each clip with a muted play/pause; if that is refused, ask for a tap.
   var primed = false;
