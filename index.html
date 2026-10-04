@@ -1,12 +1,17 @@
 <!doctype html>
 <!--
-MAKE THE VIDEO ONCE (needs ffmpeg). Join your clips into input.mov first, then run:
-ffmpeg -i input.mov -vf "scale=1920:1080:flags=lanczos,fps=30" -c:v libx264 -preset slow -crf 18 -g 5 -pix_fmt yuv420p -an -movflags +faststart film.mp4
-ffmpeg -i film.mp4 -frames:v 1 film.jpg
-If it still stutters, change -g 5 to -g 1 (bigger file).
+THE FILM. Two files, same 40-second story, scrubbed by scroll:
+  film.mp4        16:9, 1920x1080, for wide screens
+  film-phone.mp4  9:16, 608x1080, for phones held upright; the crop follows the truck and the can
+Story order and scroll slices: drop 0-22%, fill 22-40%, load 40-55%, pickup 55-75%, leave 75-100%.
+The pickup is the drop played in reverse, so the can stays one rigid box both ways.
 
-film.mp4 is the five Higgsfield clips joined in story order and retimed so each beat
-fills its slice of the scroll: drop 0-22%, fill 22-40%, load 40-55%, pickup 55-75%, leave 75-100%.
+Join your clips into input.mov in that order (each retimed to its slice), then:
+ffmpeg -i input.mov -vf "fps=30" -c:v libx264 -preset slow -crf 25 -g 15 -bf 0 -pix_fmt yuv420p -an -movflags +faststart film.mp4
+ffmpeg -i input.mov -vf "crop=608:1080:x=(iw-608)/2:y=0,fps=30" -c:v libx264 -preset slow -crf 27 -g 10 -bf 0 -pix_fmt yuv420p -an -movflags +faststart film-phone.mp4
+ffmpeg -i film.mp4 -frames:v 1 img/film.jpg
+ffmpeg -i film-phone.mp4 -frames:v 1 img/film-phone.jpg
+If scrubbing stutters on a phone, lower -g (bigger file). Keep film.mp4 under 100 MB for GitHub.
 -->
 <html lang="en">
 <head>
@@ -155,7 +160,7 @@ a:focus-visible,.card:focus-visible,.btn:focus-visible{outline:3px solid var(--g
 <main>
 <section class="film" id="film" aria-label="A dumpster drop-off and pickup, told as you scroll">
   <div class="stage" id="stage">
-    <video id="vid" muted playsinline preload="auto" poster="img/film.jpg"></video>
+    <video id="vid" muted playsinline preload="auto"></video>
     <div class="shade"></div>
     <p class="open kick">Dumpster rental and junk removal</p>
     <p class="cap" id="cap">The Dumpster Man</p>
@@ -370,11 +375,17 @@ const prime = () => vid.play().then(() => { vid.pause(); tap.classList.remove('s
   .catch(err => { if (err && err.name === 'NotAllowedError') tap.classList.add('show'); });
 vid.addEventListener('loadeddata', () => { if (!reduce.matches) prime(); });
 tap.addEventListener('click', prime);
+// Phones held upright get a 9:16 cut framed on the truck and can, so nothing is
+// stretched to fill a tall screen. Wider screens get the full 16:9 film.
+const tall = matchMedia('(max-aspect-ratio: 4/5)').matches;
+const SRC = tall ? 'film-phone.mp4' : 'film.mp4';
+vid.poster = tall ? 'img/film-phone.jpg' : 'img/film.jpg';
+if (tall) stage.style.setProperty('--focus', '50%');
 // Load the whole film into memory so seeking works on hosts without range requests.
 if (window.fetch && location.protocol !== 'file:') {
-  fetch('film.mp4').then(r => { if (!r.ok) throw 0; return r.blob(); })
-    .then(b => { vid.src = URL.createObjectURL(b); }, () => { vid.src = 'film.mp4'; });
-} else vid.src = 'film.mp4';
+  fetch(SRC).then(r => { if (!r.ok) throw 0; return r.blob(); })
+    .then(b => { vid.src = URL.createObjectURL(b); }, () => { vid.src = SRC; });
+} else vid.src = SRC;
 const clamp = v => Math.min(1, Math.max(0, v));
 function frame() {
   const r = film.getBoundingClientRect();

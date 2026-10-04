@@ -6,8 +6,9 @@ Plain HTML, CSS and JavaScript in one file. No framework, no build step. The rep
 
 ```
 index.html          the whole page: styles, markup, script, and the SITE settings
-film.mp4            the scroll film, one H.264 clip (muted, 16:9, 720p, 30 fps)
-img/                film poster, the driveway and area photos, favicon
+film.mp4            the scroll film for wide screens (H.264, 16:9, 1920x1080, 30 fps, muted)
+film-phone.mp4      the same film cut 9:16 (608x1080) for phones held upright
+img/                film posters, the driveway and area photos, favicon
 ```
 
 ## Change the business details
@@ -46,19 +47,14 @@ python3 -m http.server 8080
 
 ## The film
 
-`film.mp4` is the five Higgsfield clips joined in story order and retimed so each beat fills its slice
-of the scroll: drop 0–22%, fill 22–40%, load 40–55%, pickup 55–75%, leave 75–100%. Scrolling scrubs it.
-The page loads the whole file into memory first, so seeking works on any host. With reduced motion on,
-it holds the frame where the can has landed.
+Both films tell the same 40-second story, retimed so each beat fills its slice of the scroll:
+drop 0–22%, fill 22–40%, load 40–55%, pickup 55–75%, leave 75–100%. Scrolling scrubs it.
 
-It is 720p on purpose. The 1080p command in the comment at the top of `index.html` produced a 94 MB file,
-which is too heavy for a phone. To rebuild it, join the clips into `input.mov` and run:
+The page picks one file when it loads. Screens taller than 4:5 (a phone held upright) get
+`film-phone.mp4` (14 MB), cropped to follow the truck and the can. Everything else gets `film.mp4`
+(50 MB). The whole file is loaded into memory first, so seeking works on any host. With reduced
+motion on, the film holds the frame where the can has landed.
 
-```
-ffmpeg -i input.mov -vf "scale=1280:720:flags=lanczos,fps=30" -c:v libx264 -preset slow -crf 20 -g 5 \
-  -pix_fmt yuv420p -an -movflags +faststart film.mp4
-ffmpeg -i film.mp4 -frames:v 1 -q:v 3 img/film.jpg
-```
-
-`-g 5` puts a keyframe every 5 frames so scrubbing stays smooth. If it still stutters, use `-g 1`
-(bigger file).
+To rebuild them, join the clips into `input.mov` and run the commands in the comment at the top of
+`index.html`. Keep `film.mp4` under 100 MB, GitHub's file limit. If scrubbing stutters on a phone,
+lower `-g` in the command (bigger file).
